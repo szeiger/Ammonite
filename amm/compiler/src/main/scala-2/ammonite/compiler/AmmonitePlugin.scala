@@ -84,14 +84,14 @@ object AmmonitePlugin{
       val sym = t.symbol
       (sym.isType, sym.decodedName, sym.decodedName, Seq())
     }
-    def saneSym(sym: g.Symbol): Boolean = {
+    def saneSym(sym: g.Symbol, nme: g.Name = null): Boolean = {
       !sym.name.decoded.contains('$') &&
       sym.exists &&
       !sym.isPrivate &&
       !sym.isProtected &&
       sym.isPublic &&
       !CompilerUtil.ignoredSyms(sym.toString) &&
-      !CompilerUtil.ignoredNames(sym.name.decoded)
+      !CompilerUtil.ignoredNames((if(nme == null) sym.name else nme).decoded)
     }
 
     val stats = {
@@ -220,12 +220,18 @@ object AmmonitePlugin{
         val renameMap = renamings.flatten.map(_.swap).toMap
         val info = CompilerCompatibility.importInfo(g)(t)
 
-        val symNames = for {
-          sym <- info.allImportedSymbols
-          if saneSym(sym)
-        } yield {
-          (sym.isType, sym.decodedName)
+        def importName(selectors: List[g.ImportSelector], sym: g.Symbol): List[(Boolean, String)] = selectors match {
+          case Nil => Nil
+          case sel :: Nil if sel.isWildcard =>
+            if(saneSym(sym)) (sym.isType, sym.decodedName) :: Nil else Nil
+          case (sel @ g.ImportSelector(from, _, to, _)) :: _ if from == (if (from.isTermName) sym.name.toTermName else sym.name.toTypeName) =>
+            if (sel.isMask || !saneSym(sym, to)) Nil
+            else (sym.isType, (if(to == null) sym.name else to).decodedName.toString) :: Nil
+          case _ :: rest => importName(rest, sym)
         }
+
+        val symNames =
+          g.importableMembers(info.qual.tpe) flatMap (importName(t.selectors, _))
 
         val syms = for{
           // For some reason `info.allImportedSymbols` does not show imported

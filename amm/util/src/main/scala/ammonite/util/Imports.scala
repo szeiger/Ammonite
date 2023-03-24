@@ -119,14 +119,17 @@ class Imports private (val value: Seq[ImportData]){
       }
     }
     // Stringify everything
+    def isPackage(n: Name) = n.raw == "package" || n.raw == "`package`"
     val out = for(group <- grouped) yield {
-      val printedGroup = for(item <- group) yield{
+      val printedGroup = for(item <- group if !isPackage(item.fromName) || !isPackage(item.toName)) yield{
         if (item.fromName == item.toName) item.fromName.backticked
         else s"${item.fromName.backticked} => ${item.toName.backticked}"
       }
-      val pkgString = Util.encodeScalaSourcePath(group.head.prefix)
-      "import " + pkgString + s".{$newLine  " +
-        printedGroup.mkString(s",$newLine  ") + s"$newLine}$newLine"
+      if (!printedGroup.isEmpty) {
+        val pkgString = Util.encodeScalaSourcePath(group.head.prefix)
+        "import " + pkgString + s".{$newLine  " +
+          printedGroup.mkString(s",$newLine  ") + s"$newLine}$newLine"
+      } else ""
     }
     out.mkString
   }
